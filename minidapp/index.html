@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Minima Skill</title>
+<style>
+  :root{
+    --bg:#0b0f14; --card:#131a22; --card2:#0f151c; --line:#233040;
+    --txt:#e7edf3; --mut:#93a4b5; --acc:#4be3c8; --acc2:#2b7bff;
+    --radius:16px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--txt);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.5; -webkit-font-smoothing:antialiased;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .wrap{max-width:560px;margin:0 auto;padding:20px 16px 40px}
+  header{display:flex;align-items:center;gap:14px;margin:8px 0 18px}
+  .logo{width:56px;height:56px;flex:0 0 auto;border-radius:14px;overflow:hidden;box-shadow:0 0 0 1px var(--line)}
+  .logo img{width:100%;height:100%;display:block}
+  h1{font-size:22px;margin:0;letter-spacing:.2px}
+  .sub{color:var(--mut);font-size:13px;margin-top:2px}
+  .card{
+    background:linear-gradient(180deg,var(--card),var(--card2));
+    border:1px solid var(--line); border-radius:var(--radius);
+    padding:16px; margin:14px 0;
+  }
+  h2{font-size:15px;margin:0 0 10px;color:var(--acc);letter-spacing:.4px;text-transform:uppercase}
+  p{margin:0 0 10px}
+  .mut{color:var(--mut)}
+  .btns{display:flex;flex-direction:column;gap:10px;margin-top:4px}
+  a.btn{
+    display:block;text-decoration:none;color:#04120f;
+    background:linear-gradient(135deg,var(--acc),var(--acc2));
+    border-radius:12px;padding:13px 14px;font-weight:700;
+    text-align:left;line-height:1.25;
+  }
+  a.btn.alt{background:transparent;color:var(--txt);border:1px solid var(--line);font-weight:600}
+  a.btn .lbl{display:block;font-size:15px}
+  a.btn .hint{display:block;font-size:12px;font-weight:500;opacity:.85;margin-top:3px}
+  a.btn.alt .hint{color:var(--mut)}
+  ul.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+  ul.steps li{border-left:2px solid var(--line);padding:2px 0 2px 12px}
+  ul.steps .name{font-weight:700;font-size:14px}
+  ul.steps .name code{background:#0a0e13;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:12px;color:var(--acc)}
+  ul.steps .desc{color:var(--mut);font-size:13px;margin-top:2px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .code1{background:#0a0e13;border:1px solid var(--line);border-radius:6px;padding:1px 6px;font-size:12px;color:var(--acc);white-space:nowrap}
+  footer{text-align:center;color:var(--mut);font-size:12px;margin-top:24px}
+  footer a{color:var(--mut)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="logo"><img src="./icon.svg" alt="Minima Skill"></div>
+    <div>
+      <h1>Minima Skill</h1>
+      <div class="sub">An AI knowledge pack for building on Minima</div>
+    </div>
+  </header>
+
+  <div class="card">
+    <h2>What is this?</h2>
+    <p>The <strong>Minima Skill</strong> teaches your AI assistant everything about building on and operating the
+    Minima blockchain — KISS VM smart contracts, MiniDapps (MDS), transactions and tokens, running a node,
+    Maxima messaging and diagnosing failed transactions.</p>
+    <p class="mut">It's packed with hard-won, on-chain-proven gotchas so your AI gives you <em>correct</em>
+    Minima answers instead of guessing. Download it below, then drop it into the tool you already use.</p>
+  </div>
+
+  <div class="card">
+    <h2>Download</h2>
+    <div class="btns">
+      <a class="btn" href="https://eurobuddha.com/skills/minima-skill-1.0.0.zip" target="_blank" rel="noopener">
+        <span class="lbl">Download the skill (.zip)</span>
+        <span class="hint">for Claude Code / Claude.ai / VS Code</span>
+      </a>
+      <a class="btn alt" href="https://eurobuddha.com/skills/minima-skill-1.0.0.md" target="_blank" rel="noopener">
+        <span class="lbl">One-file edition (.md)</span>
+        <span class="hint">paste into Cursor / ChatGPT / Gemini / anything</span>
+      </a>
+      <a class="btn alt" href="https://eurobuddha.com/skills/" target="_blank" rel="noopener">
+        <span class="lbl">All install instructions</span>
+        <span class="hint">full landing page + step-by-step guides</span>
+      </a>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Add it to your AI</h2>
+    <ul class="steps">
+      <li>
+        <div class="name">Claude Code</div>
+        <div class="desc">Unzip and move the <code>minima</code> folder into <span class="code1">~/.claude/skills/minima/</span>. It loads automatically on any Minima question.</div>
+      </li>
+      <li>
+        <div class="name">Claude.ai</div>
+        <div class="desc">Settings → Capabilities → <strong>Skills</strong> → Upload skill, and choose the <code>.zip</code>. Used automatically when your chat is about Minima.</div>
+      </li>
+      <li>
+        <div class="name">VS Code / Copilot</div>
+        <div class="desc">Put the <code>minima</code> folder in <span class="code1">.github/skills/</span> (this repo) or <span class="code1">~/.copilot/skills/</span> (all repos). Reload the window; appears as <code>/minima</code>.</div>
+      </li>
+      <li>
+        <div class="name">Cursor</div>
+        <div class="desc">Save the <code>.md</code> as <span class="code1">.cursor/rules/minima.mdc</span>, then add a small YAML header (<code>description</code> + <code>alwaysApply: false</code>) at the top.</div>
+      </li>
+      <li>
+        <div class="name">Windsurf</div>
+        <div class="desc">Save the <code>.md</code> in <span class="code1">.windsurf/rules/</span> as <code>minima.md</code>. Cascade reads it automatically.</div>
+      </li>
+      <li>
+        <div class="name">ChatGPT / Gemini</div>
+        <div class="desc">Attach or paste <code>minima-skill-1.0.0.md</code> into your chat, Project, Custom GPT or Gem, then ask your Minima question.</div>
+      </li>
+    </ul>
+  </div>
+
+  <footer>
+    v1.0.0 · MIT · <a href="https://docs.minima.global" target="_blank" rel="noopener">docs.minima.global</a>
+  </footer>
+
+</div>
+</body>
+</html>
