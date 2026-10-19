@@ -1,13 +1,13 @@
 ---
 name: minima
-description: "Use when building on or operating the Minima blockchain — writing KISS VM scripts and covenants, building MiniDapps (MDS), constructing manual UTXO transactions, creating tokens/NFTs, setting up or restoring a node, Maxima messaging, integrating a native Android app, or diagnosing a failed/stuck transaction. An on-chain-proven reference with the fund-critical gotchas up front; routes to per-domain reference files."
+description: "Use when building on or operating the Minima blockchain — writing KISS VM scripts and covenants, building MiniDapps (MDS), constructing manual UTXO transactions, creating tokens/NFTs, setting up or restoring a node, Maxima messaging, connecting nodes over the keets Hyperswarm/DHT transport, integrating a native Android app, or diagnosing a failed/stuck transaction. An on-chain-proven reference with the fund-critical gotchas up front; routes to per-domain reference files."
 ---
 
 # Minima
 
 Minima is a **complete, decentralized blockchain that runs as a full constructing-and-validating node on a phone**. There are no miners and no staking: every user runs a node, and every transaction carries its own small proof-of-work (**TxPoW** — transaction and proof unified). Old blocks compress into a **cascading chain**, and coins live in a **Merkle Mountain Range (MMR)** proof database so a node can validate spends without storing the whole chain. The native coin is MINIMA (tokenid `0x00`); anyone can issue coloured tokens and NFTs.
 
-On top of the base chain sit three things this skill covers in depth: **KISS VM**, a deliberately simple, loop-free on-chain scripting language that guards coins (Minima's "smart contracts" are spending **covenants**); **MDS (the MiniDapp System)**, an app runtime built into every node that serves web MiniDapps and exposes a `MDS.cmd`/SQL/comms API; and **Maxima**, an off-chain end-to-end-encrypted messaging layer that runs over the node network.
+On top of the base chain sit three things this skill covers in depth: **KISS VM**, a deliberately simple, loop-free on-chain scripting language that guards coins (Minima's "smart contracts" are spending **covenants**); **MDS (the MiniDapp System)**, an app runtime built into every node that serves web MiniDapps and exposes a `MDS.cmd`/SQL/comms API; and **Maxima**, an off-chain end-to-end-encrypted messaging layer that runs over the node network. A fourth, newer layer is **keets** — a second transport that connects nodes over Hyperswarm/HyperDHT (the Keet/Holepunch stack), making any node (phones behind CGNAT included) dialable by public key, and adding P2P media hosting (`keets://` URLs) and pubkey messaging on top.
 
 Everything in this skill is grounded in on-chain-proven experience (node v1.0.47–1.0.48 era) plus the official docs. Minima is **quantum-safe** because it signs with **WOTS+ one-time keys** — and that single fact is the root of most of the fund-losing traps below, so read the rules before you write anything that signs or holds funds.
 
@@ -68,6 +68,7 @@ These are the mistakes that lose or lock real funds. `★` = has caused on-chain
 | Anything touching seed phrases, keyuses, signing, or key reuse | `references/key-security-wots.md` |
 | Integrating a native (non-MDS) Android app over broadcast-Intent IPC | `references/native-android-ipc.md` |
 | Doing off-chain, encrypted messaging between nodes | `references/maxima.md` |
+| Running a node over Hyperswarm/DHT, P2P media hosting (`keets://`), pubkey messaging, the `keets` command / `KEETS` MDS event | `references/keets.md` |
 | Packaging and shipping a MiniDapp — `.mds.zip`, `dapp.conf`, app stores, sandbox, IPFS | `references/distribution-packaging.md` |
 | Mapping the ecosystem, querying a block explorer, or testing scripts offline (minima-vm) | `references/ecosystem-tooling.md` |
 | A transaction failed, coins look stuck, a covenant won't spend, or a node misbehaves | `references/diagnostics-recovery.md` |

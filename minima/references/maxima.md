@@ -1,5 +1,8 @@
 # Maxima — Off-Chain Encrypted Messaging
 
+> **Newer alternative:** the **keets** services layer offers E2E-encrypted pubkey messaging with store-and-forward mailboxes and P2P media hosting over Hyperswarm/DHT, with no Maxima hosts to configure — see `references/keets.md`. Maxima remains the messaging layer built into every stock node.
+
+
 Maxima is Minima's information transport layer: every Minima node also runs Maxima, letting nodes exchange end-to-end encrypted data (text, JSON, files, transaction data) peer-to-peer over the same network — without touching the blockchain. It powers MiniDapp-to-MiniDapp communication: chat apps (MaxSolo, Chatter), DEX order relays, payment-channel negotiation, multiplayer games.
 
 Full parameter dumps for `maxima`, `maxcontacts`, `maxextra`, `maxsign`, `maxverify`, and `maxcreate` live in `references/commands-node-network.md` — this file is the tutorial.

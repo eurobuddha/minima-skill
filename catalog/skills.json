@@ -2,25 +2,25 @@
   "name": "Minima AI Skills",
   "description": "Downloadable AI skills for building on and operating the Minima blockchain. Add them to Claude, ChatGPT, Cursor, Copilot and more.",
   "icon": "https://eurobuddha.com/skills/minima.svg",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "skills": [
     {
-      "file": "https://eurobuddha.com/skills/minima-skill-1.0.0.zip",
+      "file": "https://eurobuddha.com/skills/minima-skill-1.1.0.zip",
       "icon": "https://eurobuddha.com/skills/minima.svg",
       "name": "Minima (Agent Skill)",
-      "description": "Everything-Minima AI skill as an Agent-Skill folder (SKILL.md + references): KISS VM contracts, MiniDapps/MDS, transactions & tokens, node ops, Maxima, native Android, diagnostics. For Claude Code, Claude.ai, VS Code and Copilot.",
+      "description": "Everything-Minima AI skill as an Agent-Skill folder (SKILL.md + references): KISS VM contracts, MiniDapps/MDS, transactions & tokens, node ops, Maxima, keets (Hyperswarm transport), native Android, diagnostics. For Claude Code, Claude.ai, VS Code and Copilot.",
       "category": "AI Skill",
-      "version": "1.0.0",
-      "sha256": "bc6342c27f1223c1d44f4f0690f87c7969127a2da4789b938a3a4f3d5a00c825"
+      "version": "1.1.0",
+      "sha256": "2be7efd4af911f77c6986bc338729065f611818a0a35abfa8ee3394f84388d95"
     },
     {
-      "file": "https://eurobuddha.com/skills/minima-skill-1.0.0.md",
+      "file": "https://eurobuddha.com/skills/minima-skill-1.1.0.md",
       "icon": "https://eurobuddha.com/skills/minima.svg",
       "name": "Minima (one-file edition)",
       "description": "The same Minima skill flattened into a single Markdown file to paste or attach anywhere: Cursor, Windsurf, ChatGPT, Gemini, OpenCode, Cline, or any chatbot.",
       "category": "AI Skill",
-      "version": "1.0.0",
-      "sha256": "52d9c99a51f8c95061093b93c7911d7fe8cdb51c6758625f1d2cd8fdd2c1cfbd"
+      "version": "1.1.0",
+      "sha256": "2f2e16b01542ed6b486f686800efc1610765ff5cf4cecc2cfbbbc67ca5c41703"
     }
   ]
 }

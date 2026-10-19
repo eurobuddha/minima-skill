@@ -77,7 +77,7 @@ Practical consequences of "spend in full":
 ## Coin JSON anatomy
 
 A real coin object from `coins relevant:true`, for a **token** coin (addresses and
-coinids replaced with placeholders; the tokenid is mxUSDT, a real mainnet token,
+coinids replaced with placeholders; the tokenid is MxUSD, a real mainnet token,
 `decimals:8 scale:36`):
 
 ```json
@@ -88,7 +88,7 @@ coinids replaced with placeholders; the tokenid is mxUSDT, a real mainnet token,
   "miniaddress": "MxFF...",
   "tokenid":     "0x7D39745FBD29049BE29850B55A18BF550E4D442F930F86266E34193D89042A90",
   "token": {
-    "name":        { "name": "mxUSDT", "..." : "..." },
+    "name":        { "name": "MxUSD", "..." : "..." },
     "coinid":      "0xFFCC03...",
     "total":       "...",
     "decimals":    8,
@@ -133,7 +133,7 @@ Three related facts, each independently capable of producing a fund bug:
 
 ### 1. `tokenamount` is the value; `amount` is coloured dust
 
-For the mxUSDT coin above, the coin really holds **0.28497316 USDT**:
+For the MxUSD coin above, the coin really holds **0.28497316 MxUSD**:
 
 ```
 "amount":      "0.00000000000000000000000000000000000028497316"   ← raw, looks like dust, DO NOT USE
@@ -216,7 +216,7 @@ tokencreate name:MYTOKEN amount:1000 decimals:8
 The coloured Minima × the **scale** = the token amount. Colour 1e-33 MINIMA at
 scale 36 and you have 1000.00000000 tokens with 8 decimals. This is exactly why a
 token coin's raw `amount` looks like dust: it is the coloured Minima, not the token
-value. mxUSDT (`decimals:8 scale:36`) is a live mainnet example of these numbers.
+value. MxUSD (`decimals:8 scale:36`) is a live mainnet example of these numbers.
 
 ### Token with JSON metadata
 
