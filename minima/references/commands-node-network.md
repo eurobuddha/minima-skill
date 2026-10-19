@@ -713,3 +713,33 @@ Verified against the current command source tree — don't burn time hunting for
 - **`sshtunnel`** — existed in old releases; removed from current core. Use a normal SSH tunnel / reverse proxy in front of the RPC port instead.
 - **`taskwait`** — not a command. For "wait until a queued write is approved", poll `checkpending uid:`; for send-until-confirmed semantics use `sendpoll` (Part 1).
 - **`mine`** — see the note in System & other above: it's a parameter (`mine:true`), not a command.
+
+---
+
+## Verified command behaviors worth knowing (production-confirmed)
+
+- ★ **`txpow txpowid:<id>` only proves a node has *seen* a transaction; `txpow onchain:<id>` is
+  the settlement check — and it only searches roughly the last ~20 hours.** Verify soon after a
+  transaction, or keep the id and use an archive source.
+- **Untracked address balance:** `coins megammr:true address:<addr> tokenid:0x00` on a MegaMMR
+  node (both Mx and 0x forms accepted). A standard node returns nothing for untracked addresses —
+  absence of coins is not proof of absence. A node without a seeded MegaMMR answers EMPTY for
+  everything (see node-operations).
+- ★ **The node executes every `;`-separated segment of a command string and returns only the
+  first result** — see node-operations for the gateway/allow-list implications; never
+  interpolate untrusted text into a command.
+- **`mysql`:** the export's `where` parameter is prefixed onto `SELECT * FROM coins WHERE`, and
+  `query` is passed through as a complete SQL statement; the exporter uses the node's 64
+  getaddress keys constant.
+- **`printmmr` documents leaf rows at row 0** (bundled MMR.addEntry inserts leaves at row 0; the
+  old help said 1).
+- **`restoresync` accepts no `keyuses` argument** — the command runner rejects unlisted
+  arguments, despite older help text.
+- **`keys action:list` returns size/depth/uses/maxuses/modifier/publickey — no address.** If you
+  derive the default address yourself (the SHA3-based derivation is portable), pin the port with
+  golden vectors against the node's own Java and cross-check every run — a silent mismatch means
+  your lookup asked about the wrong address and got a reassuring wrong answer.
+- **`vault`** phrase-based key restoration is distinct from password unlocking; **`reset`**
+  delegates seed recovery to `archive`.
+- **`tokens action:import/export`** moves the byte-exact token record (export as MiniData);
+  descriptions of these as key-management commands in older notes are wrong.

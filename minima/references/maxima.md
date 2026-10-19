@@ -215,3 +215,193 @@ Process Maxima messages in exactly one place — `service.js`. The UI (`index.ht
 5. Phase/sequence guards — drop duplicates and out-of-order messages.
 6. Keep payloads small; validate `txnimport` (and any deserialization) on receipt.
 7. Identify peers by `msg.data.from` (the verified public key), never by payload contents.
+
+---
+
+# Hard lessons from building a production Maxima messenger
+
+Everything below was learned building and operating a production messenger (Parlons) and its
+relay fleet on Maxima — each item traces to a live incident, a review finding, or reference-jar
+verification. ★ = reliability- or fund-critical.
+
+## Wire-level protocol facts (pin them with golden vectors)
+
+- ★ **Generate golden vectors from the real reference `minima.jar`, never from your reading of
+  the protocol.** One wrong field order makes you silently invisible on the live network — no
+  error, no signal. Known traps, all vector-pinned: `MaximaMessage` field order is
+  `random, from, to, timeMilli, application, data` (time is *fourth*); `MLSPacketGETResp` wire
+  order differs from its constructor order; hex of empty input is `""` not `"0x"`; ack bodies
+  are byte-compared by senders.
+- **The `Mx` encoding is NOT standard base32** — it is a positional big-integer conversion with
+  `i→w, l→y, o→z` substitutions that destroys leading zero bytes (hence the `0x01` guard byte).
+  Always round-trip addresses through Minima's own code.
+- **The node seed is `SHA3-256(UPPERCASE space-joined phrase)`** — not BIP39: no PBKDF2, no
+  checksum, no wordlist. A lowercased phrase hashes to a different, valid-looking, *empty*
+  wallet with no error anywhere. One shared identity function, parity-proven against the
+  reference.
+- ★ **The MAXIMA_CTRL type-1 payload carries the bare `Mx…` key with NO `@host:port`** — the
+  receiver appends the address it observed the connection from. Sending a full address doubles
+  the host on the peer's side.
+- ★ **Mine real PoW on every Maxima send** to the chain Magic min-work, ~10% past the floor
+  (÷1.1 headroom) like classic — mining exactly TO the floor gets edged out at the live-Magic
+  boundary. ~10k hashes, tens of ms. Relay-side: store the already-mined MaxTxPoW and never
+  re-mine on mail redelivery (an attacker storing to its own key and never acking otherwise
+  forces ~900k hashes per maintenance pass).
+- ★ **The 256 KB wire ceiling (`MaximaPackage.MAX_SIZE`; peers reply TOOBIG) is a hard wall**:
+  anything over it silently black-holes. Page everything that can grow (contact lists, chat
+  summaries, backups, console relays) and reject oversize locally at build time, not after a
+  round trip. Large content moves by chunking, never bigger frames.
+
+## Identity, addresses and resolution
+
+- ★ **Contacts are identity-first: the durable handle is the public key; addresses are only
+  cache.** Share `MAX#pubkey#mls`, never a bare address (classic exports contact *addresses*,
+  valid only while that host connection lives). Keep a resolution ladder: cached address →
+  MLS lookup → fan-out, plus address history.
+- ★ **A truly permanent address comes ONLY from a deliberately pinned static MLS on an open-pool
+  relay** — never from the rotating auto-anchor (the address changes when the host moves
+  networks). And pool membership must be a per-instance flag: a process-global pool default once
+  made every phone a directory host whose anchored addresses went dark when it slept.
+- ★ **Pin the identity seed file into the node's data directory BEFORE first boot** — the
+  permanent MAX# derives from it and a pinned seed survives `wallet resync`; without it a
+  resync mints a new identity and every contact's saved address for you goes silently wrong.
+  A restore must NOT carry the old host's pinned MLS anchor — the same key re-pins a fresh
+  reachable anchor on first boot, while a restored stale anchor keeps naming a retired relay.
+- **MLS trust:** accept the contact's own advertised MLS alone; any other resolution requires
+  **≥2 independent relays to agree** — a resolved address carries the key you then encrypt to,
+  so one lying directory redirects your messages to an attacker key. Replicated directory
+  entries must carry the publisher's signed proof so forwarded entries are re-verifiable, and a
+  strictly newer signed publish (by the publisher's own timestamp inside the proof) must replace
+  a relay's stale copy, or a restarted account stays unreachable for the full TTL.
+- ★ **Never advertise an address that hasn't been proven from OUTSIDE by a relay dial-back**,
+  and never advertise internal/LAN/hostless addresses — the greeting's host field *overrides*
+  what the peer dialled, so one bad advert poisons their record. A refresh with zero hosts
+  connected must say nothing. Beware the hairpin false positive: home routers don't hairpin, so
+  a dial-back from a relay on your own public IP proves nothing an external peer can use. Behind
+  CGNAT, advertise nothing.
+
+## Delivery semantics that survive production
+
+- ★ **"delivered: true" means "queued at a relay", not "received".** Build app-layer receipts
+  (SENT → DELIVERED → READ) merged by rank so a late SENT can never regress a DELIVERED, and
+  reject inbound FAILED receipts — a recipient must not be able to assert your send failed.
+- ★ **A duplicate arrival IS proof the sender lacks your receipt** — re-send the DELIVERED
+  receipt on every dedup hit, not only on first record. A receipt lost in a restart window is
+  otherwise a *permanent* bad state (message visible at the receiver, endless resend spam at
+  the sender). The resend loop doubles as the receipt-recovery channel.
+- ★ **Fan every 1:1 message out to ALL relay addresses the peer advertises; the receiver dedups
+  by message id.** First-accepting-relay delivery strands copies in mailboxes the peer no longer
+  polls (their live relay set drifts from your snapshot). Groups may stop at first-accept (cost
+  × members).
+- **Carry the sender's send-time on the wire; clamp inbound timestamps to now+5min; stamp
+  arrival separately.** Receiver-time stamping sorts late deliveries to the bottom of threads;
+  an unclamped future timestamp poisons unread watermarks and pruning (order pruning by
+  max(send, arrival), never attacker time).
+- ★ **Keep-alive ~25s on write-idle links, one dedicated blocking reader per attached host.**
+  The reference NIO drops peers it hasn't READ from in 10 min and home NATs reap idle TCP in
+  30–60 s — a passive link becomes a black hole that still reports attached. Track lastWrite
+  separately from lastSeen; detach on silence past a threshold.
+- **Layered staleness heals:** inline MLS re-resolve + one retry when a whole fan-out fails; a
+  periodic (~30 min) stale re-resolve; and a receipt-heal (any outbound entry stuck short of
+  DELIVERED gets an MLS lookup before each resend beat) — the third exists because a stale
+  relay still accepts blobs (mailbox rot) while inbound traffic keeps lastSeen fresh. After a
+  host restart, refresh contacts early (~15 s): peers keep sending to pre-restart addresses
+  until they learn new ones.
+- **Groups: no shared group key — seal 1:1 per member and fan out.** Removal then actually
+  removes; roster changes only from an admin checked against the EXISTING roster (else a removed
+  member re-adds themselves); when removing a member prune their ADMIN bit too. Cap group size
+  (~12, cost is N sealed sends) and coalesce receipts. Group two-ticks require EVERY current
+  member's receipt intersected with the current roster.
+- **Persist tombstones for user-deleted contacts** — a live peer's periodic contact-ctrl refresh
+  silently re-adds what you deleted. Tombstone by public key, with a grace window for deliberate
+  re-adds.
+- **Bridge media by capability of the TRANSPORT, not the peer's claimed capabilities** — a blob
+  reference sent over a transport with no media mesh renders blank; inline (base64 data-URL
+  under the ~150 KB inline cap) exactly where the blob path can't work. Any inbound typed chat
+  message is itself proof the peer speaks the dialect — learn and persist capability from that.
+- **Classic-engine leaf devices (phones) should run slave mode** (`TXBLOCK_NODE=true`): classic's
+  verify-or-disconnect self-defeats on weak cellular (destroys the socket inbound would arrive
+  on, then reconnect-storms); slave mode holds the relay connection and auto-pins the static MLS.
+
+## Building the app around the node
+
+- ★ **Never do blocking network work on the inbound handler thread or under the node's main
+  lock.** One lock across dedup + contact fsync + a reciprocal network send + RPC handlers
+  deafened the whole node whenever anything was slow — and clients' retry ladders then minted
+  duplicates. Narrow locks to dedup + last-seen; run chat/RPC/side-work on serial lanes keyed by
+  peer, with bounded queues.
+- ★ **Give latency classes their own executor lanes.** One thread carrying pushes + call
+  signalling + 55-second media publishes buried call offers (calls stopped ringing). Call
+  signalling gets its own lane; per-device push pools so one dead device can't stall the rest.
+- ★ **Every money RPC needs a client idempotency key, and a transport failure is "outcome
+  unknown", never a safe ✗.** A retried pay once queued a second build — one tap, two one-time
+  keys burned, potentially two payments. Only a gateway-REPORTED failure is a safe failure.
+- ★ **Mailbox re-push is a standing property of the transport: EVERY consumer must dedup by
+  message id — including call signalling.** Re-pushed offers ghost-rang phones hours later; a
+  duplicate offer for the *current* call in ANY active state must be a no-op, never a busy-reply
+  that kills the live call. Bind every call signal to the peer's key, not just the callId.
+- **WebRTC over Maxima:** signalling rides the chat layer as typed control messages (signed,
+  E2E-sealed, mined, never a bubble, never a receipt); media is ordinary DTLS-SRTP peer-to-peer;
+  run STUN on your own relays (a stateless RFC 5389 binding responder is ~90 lines) so no third
+  party learns who calls whom. Be honest about hard-NAT with no TURN, and add a connect
+  watchdog — ICE can go quiet without ever reporting FAILED.
+- ★ **Replace polling with one dedicated push reader per attached relay; paint local-first.**
+  Cache paints instantly, optimistic send echo, push events applied from the event body, delta
+  cursors with periodic full reconcile. Push bodies must not be truncated (a 500-char cap broke
+  every pushed media manifest).
+- ★ **"Live device" must mean an explicit app heartbeat, never "any authorized RPC".** A push
+  extension's post-wake fetch once stamped a device live, so follow-ups were mailboxed as
+  "delivered" with no wake sent. Heartbeat with a short window and explicit live:false on
+  background.
+- **Media over the mesh:** encrypt once (AES-256-GCM, fresh key per file), chunk under the wire
+  ceiling, owner's device is the source of truth, replicate k-of-n to relays in PARALLEL under a
+  wall-clock budget. Enforce an honest size cap up front (the structural walls — relay put
+  rates, shared LRU shelves, owner heap — are not tunable). **Pin your OWN published media in
+  the local LRU**: eviction must only ever take viewed media, or your published photos vanish
+  from their own source of truth within weeks.
+- **Chat persistence:** coalesce writes (one write per burst) but **flush before any mailbox
+  ack**; allocate per-message bookkeeping lazily; load history off the main thread.
+  Whole-file-rewrite-per-message collapses to 1–2 msg/s at 100k messages.
+
+## Running relay/host infrastructure (generic patterns, no hosts)
+
+- ★ **An accept loop must survive `Throwable`, not `Exception`** — `Thread.start()` throws
+  OutOfMemoryError at the task limit, which escapes `catch(Exception)` and leaves a relay
+  "active" that admits nobody. Guard admission separately, sleep on repeated accept errors, and
+  let maintenance restart a dead accept thread.
+- ★ **Socket writes have no timeout: a peer that stops reading blocks its writer forever** — and
+  if that writer is the single maintenance thread, keep-alives and sweeps stop for everyone.
+  Stamp write-start and reap connections whose write stalls; move keep-alives and mailbox drains
+  onto bounded discard-policy pools.
+- ★ **Reap only UNREGISTERED idle connections** — a registered-idle client is the normal case
+  (attach, register, wait for pushes); reaping them disconnects every phone every few minutes.
+  Conversely DO reap unregistered pingers on a clock, or clients that reconnect without
+  dropping the old socket exhaust the per-source cap and lock out every device behind one NAT.
+- ★ **Relay route registration must demand proof-of-possession** (a signed ack verified with the
+  routing key itself). Unauthenticated registration lets an attacker squat an offline victim's
+  routing key — receiving their mail and draining held ciphertext. Interop-preserving rule: an
+  unverified route gets mailbox-AND-best-effort-live (a squatter only ever sees undecryptable
+  E2E ciphertext and can never drain held mail); a connection that proves possession reclaims
+  the route.
+- ★ **Never sign a mailbox-deletion ack for a message that exists only in memory** — run every
+  store flush before the signed ack that lets the relay delete its copy.
+- **Mailbox storage at scale:** one file per held item (tmp + fsync + rename), metadata-only in
+  memory, ciphertext read at delivery time; a global item cap (heap) beside the byte cap (disk).
+  Reserve → write → commit; a failed write acks UNKNOWN so the sender retries elsewhere.
+- ★ **systemd `MemoryMax` must exceed `-Xmx` by a margin (+512M)** or the kernel kills the JVM
+  when off-heap overhead appears — and derive every in-memory cap from `Runtime.maxMemory()`
+  (a flat 200k-entry cap was ~800 MB of proofs on a 96 MB heap: it could never bite before OOM).
+- ★ **Never print a seed to stdout on a service** — under systemd stdout is a log file and
+  shippers copy a spendable seed onward forever. Print only on a TTY; otherwise point at the
+  0600 seed file. Write identity files LAST in any restore so a half-restore can't look complete.
+- **Rate-limit BEFORE auth, with a global bucket as the backstop; key abuse limits on the
+  connection's source IP, never on identity keys** (keys are free to mint — rotating keys gave
+  each request its own probe budget). A reachability probe may only ever target the asking
+  connection's source IP, or it is a port scanner.
+- **Load-shed without centralizing:** the shed signal carries NO destination (a signal that
+  names one lets a relay steer clients to an accomplice); the client draws its own replacement
+  from relays it verified itself, detaching only after the replacement attached. Relay discovery
+  generally: verify-before-adopt on a fresh socket, a relay may only claim ITSELF (claimed host
+  must equal the connection's source IP), keep a negative cache for failed/refusing peers.
+- **Compatibility-gate protocol rollouts:** a relay-side auth change must not reach the fleet
+  until the clients that must answer it have updated, or pre-update clients lose delivery.

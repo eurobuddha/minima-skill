@@ -478,3 +478,19 @@ RETURN FALSE
 ```
 
 Key moves: constants live in `PREVSTATE` (written once at creation), the phase port is the only one allowed to change (enforced by split `SAMESTATE` + explicit `STATE(n) EQ` checks), `VERIFYOUT(@INPUT @ADDRESS ... TRUE)` forces faithful recreation, and the escape hatch is a `@COINAGE` timelock. Commit–reveal randomness on top: parties store `SHA3(secret)` commitments in state, later reveal secrets, and the script derives the outcome with `NUMBER(SUBSET(0 4 SHA3(CONCAT(s1 s2)))) % range`.
+
+---
+
+## VM cost model and re-verifiability notes
+
+- **Gas prices instructions, not data:** CONCAT, boolean ops, shifts and SUBSET cost 1
+  instruction whether operands are 1 byte or 64 KB (node audit finding). Worst-case scripts are
+  CPU/allocation amplifiers on every validating node — keep bulk HEX operations small, and don't
+  assume the instruction limit protects validators from a hostile script's cost. The real safety
+  envelope is the layered limits (1024 instructions, stack depth 64, 64 KB values); write scripts
+  that live comfortably inside them, and remember the ~8.4–12 KB spend-time WOTS signature shares
+  the same 64 KB TxPoW budget as your state and token data.
+- **Design for on-chain re-verifiability:** compute client-side hashes bit-identically to the
+  KISS script form (e.g. SHA3 of concatenated values) so any outcome can be re-checked with
+  `runscript` in a terminal — this is what makes a "provably fair" claim checkable, and it costs
+  one design decision.

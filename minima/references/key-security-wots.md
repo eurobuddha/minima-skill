@@ -49,6 +49,45 @@ security model rests on that counter being correct and monotonic. If a leaf is e
 twice over different data, that leaf's private key becomes recoverable, and every coin sitting
 on that address is at risk. Treat a reused leaf as compromised, full stop.
 
+## Two key families: classic 64×3 and block-as-keyuses 128×4
+
+Newer nodes have **two deterministic tree shapes**, selected by the node's
+`USE_BLOCK_AS_KEYUSES` mode — `TreeKey.createDefault` builds **128×4** trees when it is true and
+the classic **64×3** otherwise (verified against bundled node bytecode):
+
+- **Classic (64×3)** — the node's 64 wallet keys, 64 uses/level × depth 3. The `uses` counter
+  is a locally stored count that must be managed across restores.
+- **Block-as-keyuses (128×4)** — the **block height** serves as the keyuses source, so the
+  signing index advances with the chain instead of a fragile local counter.
+
+Consequences that have bitten real code and docs:
+
+- **Never assume "every key has 262,144 capacity."** That is the classic shape only. Read each
+  key's own `size`/`depth`/`uses`/`maxuses` from `keys action:list` — that is authoritative.
+- **`txnsign publickey:<custom>`: the `keyuses` argument is required for classic custom
+  signing but may be omitted in block-as-keyuses mode** (where a supplied value acts as a lower
+  bound alongside the current block and saved position). The wrapper commands
+  `consolidatefrom`, `createtokenfrom`, `sendfrom` and `signfrom` all require `keyuses` and
+  delegate to `txnsign publickey:custom`: in classic mode it selects the next unused leaf.
+  `TreeKey.createDefault` follows the node mode, which **must match the mode the signing
+  key/address was created under**.
+- **Restore `keyuses` defaults are a trap:** `archive`/`megammrsync` default `keyuses` to
+  **1000**. Do NOT assume 1000 is safe — choose a restored position above every known previous
+  signature and below the key's own `maxuses`, distinguishing classic from block keys.
+  `restoresync` accepts **no** `keyuses` argument at all (the command runner rejects unlisted
+  arguments), despite older docs claiming otherwise.
+- **`getaddress` returns an existing default address** (it does not mint a fresh key each
+  call), and `vault` phrase-based key *restoration* is a different operation from password
+  *unlocking* — `reset` delegates seed recovery to `archive`.
+
+**Sharing keys between a node and an app wallet** (same seed in both) requires *coordinated,
+ongoing* counter management, not a one-time copy: durable **reservation-before-sign**, MAX-only
+reconciliation when counts disagree (a stored counter is never lowered), an imported starting
+floor that raises all 64 classic keys at once, and invalidation of any cached audit when seed,
+trust, counts or the key list change. A clean local counter is **not** proof of signing safety —
+public on-chain usage evidence must be displayed independently of it, and audits with
+missing/partial evidence must stay visibly incomplete rather than reporting "no reuse found."
+
 ## The tier rule — the most important detection filter
 
 A full Minima signature carries **multiple tiers**, one per level of the tree of trees. Only
@@ -242,3 +281,96 @@ correctly and the network accepts it. Nothing in validation detects the reuse.
 same `uses` value. The same applies to any shared prepared statement or cached state the counter
 path touches. This is the one invariant that, if violated, quietly manufactures reuse no audit
 downstream can prevent — only detect after the fact.
+
+---
+
+## One seed, one signer — the dual-signer catastrophe
+
+★★ **Never let two processes sign classic WOTS keys from the same seed with independent `uses`
+counters.** A standalone wallet once imported the node's seed, derived the same 64 classic keys,
+and tracked uses in its own preferences — node-blind — while the node tracked the same keys in
+its own DB. Both believed a leaf fresh, both signed different transactions with it; confirmed
+on-chain: **~1,146 classic addresses permanently leaked**. Correct designs, best first:
+
+1. **Delegate signing to the node** (`txncreate`/`txnsign`/`txnpost`, or `send`) — the companion
+   app is a builder/relayer, never a signer.
+2. **An atomic reserve RPC at the node** — read uses, persist uses+1, return the leaf, all under
+   the node's own Wallet monitor.
+3. **Exclusive ownership** — the node goes watch-only while the external signer owns the keys.
+
+`keys action:list` → sign locally is a TOCTOU race, never acceptable. **Reserve-before-sign**
+is the invariant: the counter is persisted at n+1 BEFORE leaf n is handed out, and every read
+takes the **MAX across all counter sources**; a stored counter is never lowered.
+
+**Hand-over rule between nodes:** set every key's uses to the highest per-key uses on the node
+being left **plus a fixed safety margin (e.g. +100)**. A "raise only if signing was observed"
+heuristic shipped once as +1 and was wrong. Fail closed: if the old node cannot report its
+counters, do not start signing on the new one — surface a loud "do not sign yet" state.
+
+## Exhaustion wraps around — refuse, don't wrap
+
+★ Upstream `TreeKey.sign` handles overflow by logging "SERIOUS ERROR : MAX TREEKEYS USED" and
+**wrapping uses back to 0** — after which every signature reuses leaf 0. Add a capacity check
+(refuse when `uses >= size^depth`) in every signing path, and run the refusal BEFORE the counter
+is advanced, so retry loops don't burn increments. Never hardcode capacity 262,144: compute
+`size^depth` from the key's own `keys` row (block mode is 128⁴ = 268,435,456), because on
+block-as-keyuses nodes every healthy key reports `uses ≈ chain height` — a hardcoded
+"exhausted" guard reads every key as spent and halts all signing (this hard-broke a production
+AMM app in ~15 places).
+
+★ **Never accept `keyuses:0` (or any low value) on restore** — it tells the node no keys were
+used, so it signs from index 0 again. Floor at the node's own default (1000) and say so in the
+UI.
+
+**Dedupe leaf burn per signing key:** a transaction with N inputs at one address should consume
+1 leaf, not N — and a separate burn transaction needs its own dedupe list.
+
+## The two key families do NOT migrate
+
+★ The same seed under block-as-keyuses (128×4) produces **different public keys and addresses**
+than classic (64×3). There is no in-place migration: a legacy wallet opened on a block-mode node
+gets `uses ≈ block height` (millions) against 262,144 capacity and **cannot even sweep its own
+funds** (the sweep needs a legacy-shape signature). Migration is always: sweep from a
+legacy-mode node to a fresh wallet created on the block-mode node. Never ship a key-mode change
+as an in-place app update — new app ID, fresh installs, old app stays available for sweeping.
+Drain all in-flight swaps/channels before any key-mode migration; persisted counterparty
+identities (pubkey/address) do not survive the switch.
+
+## Defining and counting reuse correctly
+
+- **Reuse = a LEAF (deepest-tier) public key signing ≥ 2 distinct txnids.** One transaction
+  spending N coins from an address produces N signature records sharing one txnid — dedupe by
+  distinct txnid or a reuse depth of 3 reads as 18.
+- Spend-block counting **under-counts** (two txns in one block collapse into one spend-block) —
+  treat `on-chain count == node uses` as "verify", not "clear".
+- Reuse that predates your witness coverage is undetectable, permanently — cascaded blocks lose
+  their witnesses everywhere except a genesis-era archive node. When a reuse count is lower than
+  a uses counter, suspect missing block coverage before suspecting the method.
+- Never derive an address from revealed Winternitz leaf keys (they are not the wallet's root
+  public key — derivation produced zero overlap with ground truth); group findings per coin
+  address taken from the data itself.
+
+## Seed handling in apps and services
+
+- ★ **A server identity/seed file is a spendable wallet seed — treat it as funds**: owner-only
+  permissions, never copied casually, and never run a test node on a copy of a live identity (a
+  copy is a second live account). Never print a seed to service stdout (systemd logs + shippers
+  copy it onward forever).
+- If you cache a node `-seed` boot parameter, **clear it after the first successful wallet
+  load** — the node only consumes `-seed` when CREATING a wallet; leaving it in prefs is pure
+  cleartext liability.
+- Screen hygiene (all verified bugs): `FLAG_SECURE` on seed/password screens even when a global
+  "allow screenshots" setting is on (recents thumbnails); `saveEnabled=false` on password
+  fields (Android serializes them into instance-state bundles); `EXTRA_IS_SENSITIVE` when
+  copying a seed to the clipboard (Android 13+ preview); clear seed TextViews on pause.
+  Passwords being SET take two entries (nothing verifies them later); passwords being CHECKED
+  take one (the node verifies) — and never hand a `confirm:` parameter a copy of the same
+  string, or the check silently compares a value with itself.
+- **Seed-generation RNG:** mix two independent sources (e.g. the node's `random` command plus a
+  fresh per-roll 256-bit `SecureRandom` secret) through SHA3 with exact rejection sampling for
+  zero modulo bias — every historical wallet-drain RNG hack was a small enumerable seed space.
+  Make the mixing bit-identical to a KISS VM script so any output is re-verifiable with
+  `runscript`. The per-roll audit log is seed-equivalent — protect it like the seed.
+- **BouncyCastle pin:** anything vendoring the Minima Winternitz signer (BC `gmss` classes) must
+  pin `bcprov-jdk15on:1.69` — BC 1.71+/jdk18on removed those classes, and mixing jdk15on with
+  jdk18on in one app is a duplicate-class build failure.

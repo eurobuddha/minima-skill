@@ -16,8 +16,8 @@ You downloaded one (or both) of these:
 
 | File | What it is | Use it for |
 |---|---|---|
-| `minima-skill-1.1.0.zip` | The skill as a folder (`minima/` with `SKILL.md` + `references/`) | Claude Code, Claude.ai, VS Code, Copilot — anything that supports "Agent Skills" |
-| `minima-skill-1.1.0.md` | The whole skill flattened into **one** Markdown file | Cursor, Windsurf, ChatGPT, Gemini, or any chatbot — paste or attach it |
+| `minima-skill-1.2.0.zip` | The skill as a folder (`minima/` with `SKILL.md` + `references/`) | Claude Code, Claude.ai, VS Code, Copilot — anything that supports "Agent Skills" |
+| `minima-skill-1.2.0.md` | The whole skill flattened into **one** Markdown file | Cursor, Windsurf, ChatGPT, Gemini, or any chatbot — paste or attach it |
 
 Both contain the same knowledge. The `.zip` is the "official" format; the single `.md` is the
 "paste anywhere" fallback.
@@ -26,7 +26,7 @@ Both contain the same knowledge. The `.zip` is the "official" format; the single
 
 ## Claude Code (terminal)
 
-1. Unzip `minima-skill-1.1.0.zip`. You'll get a folder called `minima`.
+1. Unzip `minima-skill-1.2.0.zip`. You'll get a folder called `minima`.
 2. Move that `minima` folder into your skills directory:
    - **All your projects:** `~/.claude/skills/minima`
    - **Just one project:** `<your-project>/.claude/skills/minima`
@@ -43,7 +43,7 @@ mkdir -p ~/.claude/skills && cp -r minima ~/.claude/skills/
 *Requires a Pro, Max, Team, or Enterprise plan.*
 
 1. Go to **Settings → Capabilities → Skills** (look for **Skills** / **Custom skills**).
-2. Click **Upload skill** and choose `minima-skill-1.1.0.zip`.
+2. Click **Upload skill** and choose `minima-skill-1.2.0.zip`.
 3. That's it — Claude uses it automatically when your chat is about Minima. (In a Project,
    you can instead just attach the zip or the `.md` file to the Project's knowledge.)
 
@@ -57,13 +57,13 @@ VS Code supports Agent Skills natively. Put the `minima` folder in any of these:
 Reload the window; the skill appears as `/minima` in Copilot Chat and auto-loads for Minima
 tasks.
 
-*Prefer a single file?* Rename `minima-skill-1.1.0.md` to `.github/copilot-instructions.md`
+*Prefer a single file?* Rename `minima-skill-1.2.0.md` to `.github/copilot-instructions.md`
 in your repo (repo-wide), or trim it to the parts you need.
 
 ## Cursor
 
 1. In your project, create the folder `.cursor/rules/` if it doesn't exist.
-2. Save `minima-skill-1.1.0.md` there as `minima.mdc`.
+2. Save `minima-skill-1.2.0.md` there as `minima.mdc`.
 3. Add these three lines to the **very top** of that file, then save:
 
    ```
@@ -79,7 +79,7 @@ in your repo (repo-wide), or trim it to the parts you need.
 ## Windsurf
 
 1. Create the folder `.windsurf/rules/` in your project.
-2. Save `minima-skill-1.1.0.md` there as `minima.md`.
+2. Save `minima-skill-1.2.0.md` there as `minima.md`.
 
 Cascade reads it automatically. (Older Windsurf: save it as `.windsurfrules` in the project
 root instead.)
@@ -89,8 +89,8 @@ root instead.)
 Two easy options — either works:
 
 - **Attach it:** start a chat (or a Project / Gem / Custom GPT) and upload
-  `minima-skill-1.1.0.md` (or the `.zip`) as a file, then ask your Minima question.
-- **Paste it:** open `minima-skill-1.1.0.md`, copy everything, and paste it in as the first
+  `minima-skill-1.2.0.md` (or the `.zip`) as a file, then ask your Minima question.
+- **Paste it:** open `minima-skill-1.2.0.md`, copy everything, and paste it in as the first
   message (or into the "custom instructions" / "system prompt" box). Then ask away.
 
 For a **Custom GPT** or **Gemini Gem**, put the file in its Knowledge and it stays available
@@ -100,7 +100,7 @@ in every conversation.
 
 - **OpenCode** and other Agent-Skills-aware tools: drop the `minima` folder into their skills
   directory (often `.agents/skills/` or `~/.agents/skills/`), the same way as VS Code above.
-- **Cline:** save `minima-skill-1.1.0.md` as `.clinerules` in your project root.
+- **Cline:** save `minima-skill-1.2.0.md` as `.clinerules` in your project root.
 - **Anything else:** if the tool has a "rules", "instructions", "system prompt", or "knowledge"
   place, put the single `.md` file there.
 
@@ -117,5 +117,5 @@ mined/valid — a covenant can silently Script-FAIL. If you get that, the skill 
 
 ---
 
-*Minima skill v1.1.0 · MIT-licensed · built from the official Minima docs and original
+*Minima skill v1.2.0 · MIT-licensed · built from the official Minima docs and original
 on-chain research. Learn more at [docs.minima.global](https://docs.minima.global).*

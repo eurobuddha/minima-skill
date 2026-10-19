@@ -320,3 +320,50 @@ outages. The following are reusable patterns, not any specific pipeline:
 
 Access surface for such a mirror: your own gateway, any public gateway via
 `/ipns/<host>/`, or the DNS-free raw IPNS key `/ipns/<k51-key>`.
+
+---
+
+## Release discipline for real-funds software (hard lessons)
+
+- ★ **NEVER change code without bumping versionCode+versionName: one logical change = one version
+  = one commit = one push**, enforced by a pre-commit hook — and know the hook's blind spot: a
+  hook keyed on `src/` commits a patched bundled `minima.jar` cleanly with no bump; the most
+  consequential change is the one the hook cannot see. Every build is one immutable versioned
+  artifact, archived forever, with `shasum -a 256` sidecar lines so `shasum -c` works. Never
+  overwrite a published binary; never let two different binaries claim one version — a
+  "split-brain" republish (built a few commits behind the reviewed source) is resolved by
+  shipping a NEW version of the reviewed code, never by re-tagging.
+- **A store catalog is manifest-only:** metadata plus a per-row sha256; binaries live on release
+  hosting, never in git (GitHub's pre-receive rejects >100 MB blobs and you end up squashing
+  history — gitignore `dist/` from day one). Clients verify downloads against the catalog hash —
+  re-stamp every row on publish, and after publishing, **download the public artifact back and
+  compare hashes** before calling it released.
+- **"Publish" means every surface, atomically:** the release is not done until the primary store,
+  the mirror, and the decentralized (IPFS) snapshot all serve the new version with matching
+  hashes. Encode this in one release script that exits non-zero unless everything is live.
+  Running a legacy publisher does not update the current public host — verify the *public*
+  endpoint serves the new content by hash, not that your publish job exited 0.
+- **IPFS store mirroring that works:** pin the snapshot on a second self-hosted node; keep kubo
+  versions/defaults identical so both compute identical CIDs; sync by *pulling* a published CID
+  file over HTTPS and `ipfs pin add` (bitswap moves only changed blocks); set mutual
+  `Peering.Peers`. A remote pinning service is redundancy and must **never be a gate** — run it
+  last, warnings only. A public gateway only serves blocks it can still fetch from someone: with
+  one provider, the "gateway fallback" expires with the cache.
+- **Deploy via a versioned file + symlink** so rollback is one `ln -sf`; name artifacts with
+  their version (a deploy script that derives version from filename turns an unversioned jar
+  into `-dev`); run a secrets audit before making any repo public.
+- **Surgical jar patching** (changing a prebuilt node jar without a toolchain rebuild): patch
+  EVERY copy of the jar (they drift); compile the class once PER jar with that jar as classpath
+  (clean compilation is the API-compatibility proof); use `zip`, not `jar uf` (unreliable on fat
+  jars); verify entry counts unchanged, the patched class's CRC identical across jars, then
+  `dexdump` the built APK to confirm the class survived into the dex (JVM-valid bytecode can
+  still be rejected by ART) — and finally verify the change *does* something: arrival is not
+  behavior.
+- **MiniDapp packaging:** the version lives in `dapp.conf` and the same bump-per-change rule
+  applies; bump `?v=` cache-busters in lockstep and CI-gate version + busters + visible footer
+  stamp together.
+- **Changing an Android app's applicationId orphans its data** — it needs explicit migration and
+  users must keep the previous install until recovery is verified. Keep the IPC action prefix
+  constant across SKUs so companions work against either; two same-prefix nodes can't run
+  simultaneously anyway (port bind) — a cheap port pre-flight probe with a plain warning covers
+  the confusion.

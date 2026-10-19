@@ -556,3 +556,57 @@ never trust `txnpost` status alone.
 | Token output "disappears", value ~1e-37 | You read `amount` instead of `tokenamount`, and/or wrote a sub-grain amount that floored to 0. |
 | Covenant rejects a mathematically-correct spend | Grain flooring — quantize outputs to `token.decimals` (reserves UP, proceeds DOWN); or the owner-key auto-sign trap flipped the branch. |
 | Token creation fails | Needs a small amount of spendable Minima as input. |
+
+---
+
+## Hard lessons: sizes, reorgs, and chain truth
+
+Field lessons from production minting/sending engines (StateNFT suites, wallets, AMMs). ★ =
+funds at stake.
+
+### The 64 KB TxPoW cap is a JOINT budget
+
+★ Every coin in a split embeds the FULL token definition; the spend adds a ~8.4–12 KB WOTS
+signature; a creator-signed `tokencreate` appends its ~8.4 KB signature to the token record
+AFTER any client-side size math; a sealed transfer carries the record twice (and an embedded
+image twice). Compute the real record length at mint time (measure the wrapped record, don't
+estimate with a multiplier), gate `record + largest image + signature` as ONE budget, and
+calibrate the ceiling with an on-chain ladder of exact-length probes (in one real calibration,
+20,000 combined bytes confirmed and 21,000+ all failed — the budget is the proven pass minus a
+safety margin). Never raise an image budget without re-proving the joint ceiling: one release
+minted collections that were "minted forever, transferable never" — mintable but unspendable.
+An oversized TxPoW is accepted to the mempool (`status:true`) and **silently never mined**.
+
+### Chain truth beats state machines
+
+- ★ **One-way phase machines lose to reorgs.** Dropped/rewound transactions un-happen AFTER your
+  engine advanced past them. Re-derive phase from chain state every tick (a stamping phase that
+  finds unsplit coins must return to splitting); self-healing from chain truth beats migrations —
+  stuck rows recover on the first tick after an update. Admit terminal states: a wrecked
+  collection classifies DAMAGED with an honest message instead of flip-flopping forever.
+- ★ **Reserve unique indices durably at post time, not at confirmation.** Choosing "lowest free
+  index" from the chain view alone hands out the same index again on every stale view — one live
+  collection sealed the same edition index onto four different coins, permanently, under a
+  locked contract. Free-index derivation must count chain seals PLUS local reservations.
+- **Make re-posts duplicate-proof by construction:** re-post a dead reservation onto its OWN
+  reserved coin, so a resurfacing original can only double-spend the same coin, never create a
+  second seal.
+- **Watchdogs must not reset escalation counters** — a stall watchdog whose recovery reset the
+  "cannot fit the 64 KB cap" escalation turned an honest terminal error into an eternal loop.
+- **"DONE" counts CHAIN-CONFIRMED outcomes only.** Counting posted-but-unconfirmed reservations
+  as done once hid six dead stamps behind a false DONE.
+
+### Node-reply sharp edges
+
+- ★ **On `-lowram` nodes (including some released Android node builds), `coins state:<value>`
+  silently returns UNFILTERED results** — the state filter only ran in full-RAM mode. Re-verify
+  state filters client-side, or confirm your node carries the fix; any funds logic keyed on a
+  state search is affected.
+- **Compare coin amounts as NUMBERS** — the node reports `"1"`, `"1.0"`, `"1.000…"` for the same
+  unit coin depending on build; string equality misclassifies coins.
+- **One transaction spending N coins from one address = N signature records sharing one txnid** —
+  dedupe any signature-based counting by distinct txnid.
+- **`coinexport` byte-exactness has a brutal failure mode:** a token descriptor reconstructed
+  from `coins` JSON re-serializes with different key order → different tokenid → consensus drops
+  the transaction SILENTLY after a *successful* async `txnpost` ("TokenID in Coin input doesn't
+  match token") — burning a WOTS leaf per attempt. Add a loud pre-signing byte-equality gate.

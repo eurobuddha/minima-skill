@@ -179,3 +179,39 @@ The default P2P port is 9001; nodes accepting incoming connections additionally 
 - **WOTS** — Winternitz One-Time Signature scheme; quantum-safe, strictly single-use keys organized into Merkle trees of keys.
 - **Mempool** — unconfirmed valid TxPoW units, ordered by burn.
 - **Chain ID** — the network identifier in every TxPoW header; `0x01` on the Minima main chain.
+
+---
+
+## Protocol facts that surprise implementers
+
+- ★ **The seed is NOT BIP39: it is `SHA3-256(UPPERCASE space-joined phrase)`** — no PBKDF2, no
+  checksum, no wordlist validation. A lowercased phrase hashes to a different, valid-looking,
+  *empty* wallet with no error anywhere. Always uppercase before hashing; never validate phrases
+  against BIP39 wordlists.
+- **Wire-codec field order is protocol, not style.** A reimplementation that reorders one
+  serialized field silently breaks interop with classic nodes while both sides still work
+  against themselves. Gate any port with byte-exact golden vectors captured from the official
+  `minima.jar` plus a live interop test against a real classic node.
+- **The `Mx` address encoding is NOT standard base32** — it is a positional big-integer
+  conversion with `i→w, l→y, o→z` substitutions that destroys leading zero bytes (hence the
+  `0x01` guard byte), and SHA3-256 is used with two different pre-processings in different
+  places. A library base32 produces an address that looks valid and resolves to nothing — always
+  round-trip addresses through Minima's own code. (Also: hex of empty input is `""`, not
+  `"0x"`.)
+- **Per-transaction PoW is not verified on the relay/inclusion path** (audit finding) — only the
+  *claimed* difficulty is bounds-checked. Do not design anything that relies on txn PoW as an
+  anti-spam or rate guarantee.
+- **Initial sync is weak-subjectivity:** IBD sync blocks are accepted on block-number/parent-hash
+  linkage only — no MMR re-derivation, no PoW verification (audit finding). Sync fresh or
+  restoring nodes from hosts you trust; cross-check balances against a second source.
+- ★ **Pruning changes what is auditable, permanently.** A normal (even MegaMMR) node keeps
+  headers + the live coin/MMR set; spent history and signature witnesses are gone on cascade.
+  Consequences: (a) a third party cannot total an arbitrary address or enumerate a token's
+  holders — publishing a treasury address "for verification" proves nothing on Minima; (b)
+  anything needing historical witnesses (signature forensics, reuse audits) requires an archive
+  node run continuously from the relevant era — once cascaded, the data is permanently gone.
+- ★ **Anyone can create a token with any name — identity is the tokenid only.** Verify the full
+  tokenid character-for-character against the issuer's published validation. `tokenvalidate` has
+  two independent halves: `webvalidate` (a domain publishes this tokenid — provable) and
+  `signature` (signed at mint). Token metadata is fixed at creation and **cannot be signed
+  retrospectively** — an unsigned token's owner field is a claim, not proof.

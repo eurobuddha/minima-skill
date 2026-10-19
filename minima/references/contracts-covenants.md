@@ -852,3 +852,74 @@ uni-directional-channel.
 These cover multisig, HTLC, time-lock, vault, exchange, coinflip, ELTOO, and
 state-chains as official worked tutorials — the canonical versions of the patterns
 taught above.
+
+---
+
+## Covenant lessons from production security reviews
+
+Findings from formal reviews of live contracts and the node's own VM audit. ★ = funds at stake.
+
+- ★ **KISS VM `MULTISIG` does not deduplicate signers: the same key in multiple slots satisfies
+  N-of-M with ONE signature** (node audit finding). Any contract building a MULTISIG list from
+  keys an attacker can influence collapses to 1-of-M. Source multisig key lists from immutable
+  PREVSTATE and dedupe in your own script logic.
+- ★ **`VERIFYOUT`'s keepstate parameter checks only the store-state FLAG, not state CONTENT.** A
+  covenant relying on keepstate for identity immutability prevents state *removal*, but a holder
+  can *rewrite* state on coins they hold. True immutability: mint each coin with a sentinel
+  state value, allow a creator bypass only while unstamped, then enforce `SAMESTATE` — proven
+  on-chain that even the creator's own tamper is rejected while exact-preserve transfers pass.
+  An already-minted collection without this cannot be patched — only re-minted.
+- ★ **Four generic covenant bug classes** (all found in one real betting-contract review): (a)
+  **blind cosign** — an oracle/cosigner key signs a transaction without the script forcing what
+  that transaction does, turning the signature into a rubber stamp; (b) **float brick** —
+  decimal/precision state arithmetic that can reach a value the script can never satisfy,
+  permanently locking funds; (c) **key binding** — a role key not bound into the coin's state,
+  letting a counterparty substitute their own; (d) **fill rewrite** — a partially-filled offer
+  whose remaining terms the filler can rewrite. Review every covenant against all four and prove
+  the hardened contract on-chain with a scripted test before shipping.
+- **Take HTLC/swap party keys from PREVSTATE, never baked into the script:** the contract address
+  is then identical across key-system modes (classic vs block-as-keyuses) and signing works via
+  `txnsign publickey:auto` with no `keyuses:` coupling.
+- ★ **Shared covenant addresses pollute every tracking node.** Demoting a script
+  (`newscript trackall:false`) left the address in the node's in-memory tracked cache until
+  restart, so the node kept adopting EVERY stranger's coin at the shared address into its
+  relevant set — and relevant txpow rows are never deleted, growing one node's store to ~1.2 GB
+  on a 512 MB heap. `megammrsync action:resync` (not a restart) is what cleans it.
+- **Any native port of an on-chain protocol** (address derivation, signing-over-canonical-JSON,
+  checksum schemes) must pass golden vectors generated from real on-chain artifacts before it
+  touches mainnet.
+- **KISS VM gas prices instructions, not data:** CONCAT/boolean ops/shifts/SUBSET cost 1
+  instruction whether operands are 1 byte or 64 KB (audit finding) — keep bulk HEX operations
+  small; the real safety envelope is the layered limits (1024 instructions, stack depth 64,
+  64 KB values), and the ~8.4–12 KB spend-time WOTS signature must fit under the same 64 KB
+  TxPoW cap as your state and token data.
+
+## Cross-chain bridge/swap patterns (Minima ↔ Ethereum)
+
+Generic architecture lessons from operating a production bridge (the Minima-side dollar token is
+**MxUSD**, tokenid `0x7D39745FBD29049BE29850B55A18BF550E4D442F930F86266E34193D89042A90`; "USDT"
+names only the Ethereum ERC-20 leg):
+
+- ★ **Payout ordering is the whole safety argument:** wait a reorg-safe confirmation depth on the
+  deposit chain (12 Ethereum blocks) before paying out, then verify your OWN payout on the
+  destination chain (≥3 confirmations) **before** sweeping the deposit — sweeping is what closes
+  the user's refund window, and it must never close before they were provably paid.
+- ★ **Give depositors a time-based refund they can call themselves** (`refund(depositId)` after a
+  fixed window): the one protection that doesn't depend on the operator existing. State its
+  limits honestly and expose refundability as public reads.
+- ★ **The verified source on the block explorer (Exact Match) is what runs — not the
+  repository.** If the repo has drifted, say so and point auditors at the verified source.
+  Publish the trust model openly (custody keys, no multisig/timelock, backing policy).
+- ★ **Minima-side balances cannot be third-party audited** (pruned history + untracked-address
+  blindness), and a total-supply mint is a ceiling, not circulation. Publish the issued-claim
+  figure, mark Minima-side figures as attestations vs the Ethereum side's verifiable
+  `balanceOf`, and anchor token authenticity in the full published tokenid (`webvalidate`),
+  never a name.
+- **Service shape that held up:** independent monitor/worker/scheduler processes per chain over a
+  durable queue (one chain's outage can't cascade), batch the cheap chain's payouts, process the
+  expensive chain's individually, track refund eligibility as first-class state.
+- **Ethereum-leg sharp edges from production:** parse nonces as unbounded integers (a signed-long
+  conversion overflows); a token SYMBOL is not identity — different contracts can share a symbol,
+  so select and display assets by contract address; freeze the reviewed owner/RPC/chain/token/fee
+  through signing and invalidate stale preflights; reject malformed/partial event-log batches
+  before advancing a scan cursor, or the engine skips unread events forever.

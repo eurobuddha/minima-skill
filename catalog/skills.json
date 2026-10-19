@@ -2,25 +2,25 @@
   "name": "Minima AI Skills",
   "description": "Downloadable AI skills for building on and operating the Minima blockchain. Add them to Claude, ChatGPT, Cursor, Copilot and more.",
   "icon": "https://eurobuddha.com/skills/minima.svg",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "skills": [
     {
-      "file": "https://eurobuddha.com/skills/minima-skill-1.1.0.zip",
+      "file": "https://eurobuddha.com/skills/minima-skill-1.2.0.zip",
       "icon": "https://eurobuddha.com/skills/minima.svg",
       "name": "Minima (Agent Skill)",
-      "description": "Everything-Minima AI skill as an Agent-Skill folder (SKILL.md + references): KISS VM contracts, MiniDapps/MDS, transactions & tokens, node ops, Maxima, keets (Hyperswarm transport), native Android, diagnostics. For Claude Code, Claude.ai, VS Code and Copilot.",
+      "description": "Everything-Minima AI skill as an Agent-Skill folder (SKILL.md + references): KISS VM contracts, MiniDapps/MDS, transactions & tokens, node ops, Maxima, keets (Hyperswarm transport), native Android, transaction-evidence & wallet engineering, diagnostics \u2014 with the hard lessons from a fleet of production apps. For Claude Code, Claude.ai, VS Code and Copilot.",
       "category": "AI Skill",
-      "version": "1.1.0",
-      "sha256": "2be7efd4af911f77c6986bc338729065f611818a0a35abfa8ee3394f84388d95"
+      "version": "1.2.0",
+      "sha256": "d4c8b5705caeb24b7942275322aab77255b415608f946ad84dd2ec6156965f97"
     },
     {
-      "file": "https://eurobuddha.com/skills/minima-skill-1.1.0.md",
+      "file": "https://eurobuddha.com/skills/minima-skill-1.2.0.md",
       "icon": "https://eurobuddha.com/skills/minima.svg",
       "name": "Minima (one-file edition)",
       "description": "The same Minima skill flattened into a single Markdown file to paste or attach anywhere: Cursor, Windsurf, ChatGPT, Gemini, OpenCode, Cline, or any chatbot.",
       "category": "AI Skill",
-      "version": "1.1.0",
-      "sha256": "2f2e16b01542ed6b486f686800efc1610765ff5cf4cecc2cfbbbc67ca5c41703"
+      "version": "1.2.0",
+      "sha256": "1f10ed9871ce20254d94a41da59f8ad29f96ae4c9e40e242c46071226434f514"
     }
   ]
 }

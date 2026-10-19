@@ -157,3 +157,62 @@ with ed25519 signatures over the message content.
   `<datadir>/keets/apitoken`.
 - `keets://` fetchers re-seed opportunistically only while running; use pins
   (`POST /pin`) for content that must stay available.
+
+---
+
+## Interop & integration lessons (from shipping keets in production apps)
+
+- **Hybrid DHT bootstrap beats an isolated fleet:** run your own bootstrap nodes but have each
+  join the global public HyperDHT upstream, and ship clients a default list containing both —
+  either side alone can boot the network (verified live: a globally-bootstrapped client dialed a
+  fleet-only-bootstrapped phone in ~1 s). Mailbox nodes are dialed by Noise pubkey via the DHT,
+  so their IPs are incidental, not identity.
+- **Surface the node's keets identity everywhere an operator looks** — status/ping output and at
+  bridge startup, always in full: the pubkey is the thing another user adds as a contact.
+- **Refuse transportless contact adds:** a contacts command must reject a keets pubkey on a host
+  without a keets transport rather than store a contact that can never deliver.
+- **A keets send is already durable (direct or mailbox) and has NO DELIVERED protocol** — exclude
+  keets peers from classic resend ladders and from group receipt denominators. A classic resend
+  ladder applied to keets peers once republished every unread photo under a new drive path every
+  60 s for a day.
+- **Speak a peer app's dialect exactly and pin it with vectors captured from the live app.** The
+  KeetChat decoder requires `body` present and dedups on `id` (omitting either produced raw-JSON
+  bubbles on a real device); its read receipts are UP-TO — one receipt referencing the newest
+  message marks everything before it. Keep the translation in one tested translator class.
+- **Harden the bridge like a boundary:** cap blob fetches (e.g. 8 MB) so an attacker-published
+  blob can't heap-load the node; validate a send target as a keets pubkey before any command
+  interpolation; ack the inbox drainer only AFTER the consumer has durably stored the message;
+  fall back to caption text when a media publish fails.
+- **Transport ceilings differ per host:** over Android broadcast IPC, keets media as `datahex`
+  hits a ~118 KB ceiling — hand larger content off via `content://` (Android) or a `file:` path
+  (same-filesystem desktop node), and cache the pubkey from `keets action:info`.
+- **Sandboxed sidecars need AF_NETLINK:** udx-native's network-interface watcher opens a netlink
+  socket; a systemd `RestrictAddressFamilies` list without `AF_NETLINK` kills the sidecar at
+  boot with EAFNOSUPPORT.
+- **Received display names fill unnamed contacts only** — an inbound name must never overwrite a
+  user's custom contact name; apply it only when the stored name is empty.
+
+## App integration rules (learned shipping keets clients)
+
+- ★ **Exactly ONE drainer per node inbox.** Store a message durably BEFORE `ack`; companions
+  receiving a fan-out event store but never ack; control messages (read receipts, pay-address
+  exchange) are forwarded but never stored, and only the NODE answers request-type controls. An
+  RPC-mode page must never drain an inbox a host app already drains — they steal messages from
+  each other.
+- **The node must run with `-keets` or the `keets` command refuses** and a drainer starves
+  silently — log inbox-unavailable errors (once per distinct error) or the failure is invisible.
+  Prefer `datahex:` over `message:` for sends (avoids all quoting pitfalls).
+- **Key disk caches by sha256 of the full `keets://` reference, never a 32-bit hashCode** (silent
+  collisions display the wrong media); delete failed/partial fetches instead of caching them.
+- **Adopt the incumbent wire schema for chat interop:** reuse the `maxima_chat_v1` field names
+  (application/id/body/name/ref/ts, plus typed control fields) hex-encoded into `datahex`, so
+  one payload convention parses in every client; keep accepting the previous plain format on
+  receive.
+- **Bare/worklet packaging on Android:** pack nested node_modules prebuilds RECURSIVELY (npm
+  nests duplicate native addon versions — a top-level-only walk missed one `.so` and the runtime
+  SIGABRT'd the app in a restart loop); a worklet's fd 0 is /dev/null, so stdin-EOF exit hooks
+  kill it ~100 ms after start; map the `http` builtin to bare-http1 in the pack-time imports map.
+  Pin the whole toolchain (source commit, archive hashes, runtime versions) in a lock file and
+  verify the exact bundle + every nested addon + the runtime inside each built APK.
+- **A Maxima contact address (`Mx…@host:port`) changes when a node moves relay** — pair by
+  introducing the two nodes to each other; never persist the printed address as identity.

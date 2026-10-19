@@ -406,3 +406,89 @@ to the same trap.
 - **Prefer internal storage and client mode for the embedded node** — app-private storage, no
   inbound listener, RPC/MDS disabled. Relaxing peer-IP filtering re-adds LAN exposure; only do
   it if the topology needs it.
+
+---
+
+## Hard lessons from production companion apps and embedded-node hosts
+
+All found live. ★ = app-killing or fund-risking.
+
+### The Binder death window, precisely
+
+★ An IPC reply can be under the node's 256,000-char inline cutoff yet over the ~256 KB broadcast
+parcel limit: `String.length()` counts UTF-16 chars while `Parcel.writeString` serializes
+~2 bytes/char, so a ~131K-char `coins` reply ≈ 262 KB parcel. `TransactionTooLargeException` is
+raised in the RECEIVING process before any callback and is uncatchable on either side — the
+companion dies instantly and reproducibly on every open once its wallet grows through the
+128K–256K-char band. Fix: cap inline replies well below (~100K chars) and hand off larger
+results as a `content://` file via a non-exported FileProvider with the URI read-granted to
+exactly the calling package (a file descriptor crosses Binder, not the data). Negotiate per
+command with a boolean extra so old/new client/node pairings keep working. Field signature:
+`am_kill … "Can't deliver broadcast"` in the event log.
+
+### Broadcast-IPC traps
+
+- A broadcast carrying a `content://` DATA uri never matches an intent-filter lacking a `<data>`
+  element — media IPC silently dead while plain commands work.
+- The sender must HOLD the signature permission it defines (defining ≠ holding), and
+  `checkSignatures` needs package visibility on Android 11+ (`<queries>`) or every
+  correctly-signed caller reads as UNKNOWN_PACKAGE.
+- Send with `intent.setPackage` (explicit); target replies at the caller only; on API 34+ require
+  `getSentFromPackage()` to agree with any claimed package — every other identifying extra is
+  self-declared. Authenticate by verified signature, never by a caller-supplied package name.
+- Reserve the transport's own application strings from IPC clients, or any client can forge
+  protocol-internal messages as the user.
+- Derive FileProvider authorities from `${applicationId}`, never a fixed string — a fixed
+  authority makes two SKUs of one codebase `INSTALL_FAILED_CONFLICTING_PROVIDER`.
+
+### Command strings are an injection surface
+
+★ The node's command tokenizer has no escape character and whitespace-splits with **last-wins**
+semantics: any untrusted text interpolated into a command is injection. A pasted recipient of
+`MxREALADDRESS burn:100` injects a burn; a hostile inbound media reference rewrites a fetch
+command. Validate at one choke point BEFORE a command string exists (strict no-whitespace
+patterns, address/amount format checks). Also: megabyte-scale `datahex:` parameters are dropped
+by the tokenizer — use file-based hand-off for big payloads in both directions.
+
+### Services, scheduling, and the OS
+
+- ★ Android 14 caps `dataSync` foreground services at ~6 h/day, then `startForeground` THROWS —
+  with a pending background job this crash-looped the whole app until force-stop. Use
+  `specialUse` (persistent connection to the user's own node) with a clean `onTimeout`, a
+  graceful bail when promotion is refused, and `stopWithTask=false` so swiping the app away
+  doesn't abandon a half-finished on-chain operation. Add a BootReceiver restart and a
+  battery-exemption affordance.
+- `AlarmManager` is not a schedule on modern Android — `setInexactRepeating` can simply never
+  fire under Doze/OEM battery management. Drive periodic work from the node's own **NEWBLOCK
+  heartbeat** (~50 s) with your own debounce; and debounce at the worker (starting an
+  already-running service delivers `onStartCommand` again — every tick does the work twice).
+- Run node commands off the broadcast main thread (`NetworkOnMainThreadException` for anything
+  opening a socket) — but know the serialized-executor cost: ONE slow command (a 47 s `history`
+  on an unindexed table) stalls every companion at once against their 30 s timeouts.
+- Newer Android blocks cleartext HTTP even to loopback — a localhost sidecar API fails with
+  "Cleartext HTTP traffic to 127.0.0.1 not permitted". Add a network-security-config exception
+  for 127.0.0.1/localhost only.
+- There is no SHA3 JCA provider on Android — inject one (BouncyCastle) at the top of EVERY
+  process entry point, not just the main activity (onboarding flows run before it).
+  `BigInteger.TWO` is API 33+ — test on your minSdk.
+
+### Heap and storage reality on phones
+
+- `dalvik.vm.heapgrowthlimit` vs `heapsize` differ per OEM, so `largeHeap="true"` is sometimes a
+  doubling and sometimes a no-op — express every heap threshold as a fraction of
+  `Runtime.maxMemory()`, never absolute MB. Mainnet MegaMMR needs ~1.2 GB RAM, so a 512 MB-heap
+  phone must run `-megammr` PLUS `-megaprune`. OOM is an `Error` — `catch(Exception)` lets it
+  kill the node; stream imports in batches with an in-flight heap watermark.
+- ★ Never ship `-rpcenable` without `-rpcpassword` — the embedded node's HTTP server binds every
+  interface and only checks credentials when a password is set. Generate a SecureRandom password
+  at start (and mint IPC auth tokens with SecureRandom, never `java.util.Random`).
+- Node file outputs (`backup`, `megammr action:export`, `txnexport`) land in the node's private
+  files dir. If you bridge file access, admin-gate it, canonically resolve and contain every
+  path to the base folder, and write-protect the live `databases/` folder — a file manager must
+  never be able to corrupt the running wallet DB.
+- The adaptive paged coin sweep in detail: query coins over `[coinage, depth]` age windows, halve
+  the span on overflow down to single blocks, double on success, accumulate deduped by coinid.
+  Tip-anchored depth ladders are all-or-nothing for same-vintage coins (20 coins × 14 KB embedded
+  token metadata = one 383 KB reply = empty result). Cache the whole-wallet list briefly and
+  filter locally so N collections cost one query — and conversely, don't cargo-cult the paging
+  machinery into an app whose replies are 13 KB.

@@ -237,3 +237,30 @@ MiniDapps, tutorials, and libraries collected by the community. It is a good dis
 when you are looking for existing tooling or example projects before building your own. As with any
 community list, verify that a linked project is current and matches the official protocol before
 relying on it.
+
+---
+
+## Gateway, companion-app and tooling lessons
+
+- **Node-gateway security (from a formal audit of an enterprise gateway, generic to any node
+  front-end):** passthrough `$param` substitution into node commands without validation is
+  command injection; store the node RPC write password encrypted, never display it; a public
+  gateway needs CSRF protection, session regeneration on login, login rate-limiting, and an
+  ALLOW-list of commands (anything not listed is a 403). The proven shape: loopback-only
+  unauthenticated admin RPC + a separate public gateway, allow-listed and rate-limited per-IP
+  and globally, with wallet-send and seed operations deliberately absent from any web panel.
+- **Chain-archive scans (reuse audits, spend indexes) cannot run on a phone** — millions of
+  blocks, and the `coins` convenience table is unreliable for it. Put the spend index on a
+  server and send only PUBLIC keys/addresses, with the honest disclosure that addresses are
+  revealed to that server. `FLAG_SECURE` is for secrets; an audit screen showing only public
+  keys should be capturable — sharing a verdict is a first-class use.
+- **Companion-app baseline:** no embedded node; one READ command surface where possible; zero
+  Android permissions achievable (IPC needs none); registered and user-enabled in the node app;
+  forward `onDestroy` to the API client for clean shutdown. Size the plumbing to the actual
+  payload.
+- **Display formatting:** clamp wallet SUMMARY amounts (e.g. 6 decimals, truncate toward zero,
+  "<0.000001" for dust) but keep detail views EXACT — BigDecimal at the display boundary only —
+  and never truncate an identifier anywhere (full value or one-tap full-value copy).
+- **Checking whether a GitHub repo exists:** `gh repo view <slug> --json visibility`, never an
+  anonymous fetch — a private repo and a nonexistent repo both 404 anonymously (three "missing"
+  source repos were simply private).

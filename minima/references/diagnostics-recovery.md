@@ -242,3 +242,94 @@ with nothing moved.
 | App killed / node crash on a big query | Android Binder ~1 MB overflow | return less up front (`depth:`, per-token) | `references/native-android-ipc.md` |
 | Covenant took the wrong (owner) branch | `auto` signed with the owner key | exclude owner/pool addresses from funding | `references/contracts-covenants.md` |
 | Pool/covenant "invisible" | Literal differs from stored → different address | compare derived addresses; canonicalize literals | `references/contracts-covenants.md` |
+
+---
+
+## Hard lessons: backup, restore, and node health
+
+### backup/restore sharp edges
+
+- ★ **`backup` with no password is effectively plaintext: the default password is the literal
+  string `minima`, which every Minima binary knows** — and the 24-hour auto-backup runs bare
+  `backup`, so auto-backup nodes accumulate seed-bearing files protected by a universal
+  constant. Always pass a real `password:`; treat backup files as seed-equivalent; make sure the
+  app-private folder can't become a cloud upload (an `android:allowBackup` misconfiguration did
+  exactly that once).
+- ★ **`restore` has no rollback:** after the password check, a corrupt or truncated backup fails
+  with the node already torn down and the chain/user DBs already overwritten in place. Pre-flight
+  with the non-destructive `decryptbackup`, size-verify imported backup files (a short SAF copy
+  fails much later as a misleading "Incorrect Password!"), and delete partial imports
+  immediately. `restore` also never signals service shutdown — it returns "Restart Minima for
+  restore to take effect!" with the node already down; don't wait for a shutdown event.
+- **Auto-recovery guards for destructive commands:** never auto-resync while the mempool is
+  non-empty (resync drops pending txns); at most one automatic attempt per 24 h, counted at
+  START; commit the pending-operation flag BEFORE issuing the destructive command (process death
+  must never look like success); classify failures by WHEN they occur — "Could not connect to
+  Archive host" is pre-flight (safe to retry another host), "Error getting MegaMMR data" is
+  thrown AFTER the node deleted its txpow/archive DBs (never auto-retry).
+
+### Node health and the unbounded-growth chain
+
+- **A node can be alive, on-chain, foreground-healthy — and useless.** Heap exhaustion presents
+  as every companion app timing out at once while the node looks perfect. Diagnose from logcat
+  on the node pid: count "Waiting for a blocking GC" (0–3 = startup; thousands = thrash), then
+  read `Long monitor contention` for which lock. Measured: 47 s single-lock holds vs 30 s client
+  timeouts.
+- ★ **The unbounded-growth chain:** the txpow store's only DELETE excludes relevant rows, so rows
+  once marked relevant are NEVER deleted; any relevant-set inflation (e.g. a tracked shared
+  covenant address adopting strangers' coins) grows the store without bound. The fix that
+  actually recovers the node is **`megammrsync action:resync`** (rebuilds the coin set from the
+  wallet's real addresses) — a restart buys ~2 minutes; an index only makes the bloat
+  survivable. Verified live: ~1.18 GB store / pinned 512 MB heap / 12,247 blocking GCs → 29 MB /
+  132 MB / 0, in the same process.
+- **Total disk is a BAD health trigger:** the archive area is SUPPOSED to grow (≈100,000 blocks
+  ≈ 50 days retained, hard-coded) — only txpow table size/row count diagnoses the resync-fixable
+  pollution. `adb shell dumpsys diskstats` is a stale cached snapshot; measure from the node
+  itself (`status complete:true` → memory.disk / memory.files.*).
+- **`status complete:true` throws NPEs during node startup** (first on the wallet seed row, then
+  a null chain tip). Pollers must tolerate and retry; gate on the node's startup-complete
+  signal — an existing node instance is not a ready node.
+- **Health checks: loud when healthy, honest when failing.** Log the OK line every check (silence
+  is indistinguishable from never-ran); require verdicts to dwell (e.g. 10 min both directions);
+  claim the debounce slot only AFTER a sample is taken; re-baseline when the wall clock jumps
+  backwards. Calibrate thresholds from measured healthy baselines, never guesses (a 60/hr
+  blocking-GC alarm would have nagged healthy nodes running ~25/hr).
+
+### Verifying fixes and infrastructure
+
+- ★ **When a fix "didn't deploy", unzip the artifact and check the bytes before doubting the
+  fix.** Real traps: a fat-jar whose classpath resolved only inside a closure shipped stale
+  bytes under a new version number with every check green; a mis-sorted jar name made the deploy
+  script redeploy the old build. Verify the RUNNING version, never the deploy banner.
+- **Verify infrastructure from OUTSIDE:** `systemctl is-active` proves nothing — attach two real
+  clients and make them talk. One failed probe right after a cloud-firewall change proves
+  nothing (rules take minutes); `tcpdump` on the box while connecting from outside is decisive
+  (no packets = dies upstream; SYN in, no SYN-ACK out = the box drops it). Ship a `--selftest`
+  that separates "binary broken" from "port unreachable".
+- **Make failure visible before fixing it:** swallowed exceptions in fan-out/lookup/resend
+  created a 15-minute blind window; every total failure must name the peer, the address tried,
+  and the transport's answer. Beat-matched logs (sender beats vs receiver stamps, to the second)
+  are what distinguish "delivery failed" from "the receipt was lost".
+- **A regression test that passes with the bug re-injected guards nothing** — drive the actual
+  fix site: re-inject the bug, watch red, then fix. A wrong lock SCOPE is invisible to
+  single-threaded tests (per-instance locks over shared files double-reserved one-time signing
+  keys): fund-critical counters need one process-wide lock plus an OS file lock, raise-only.
+- **A block explorer is a lead, never proof** — one production explorer was missing ~93% of
+  blocks with numbers off by tens of thousands. Confirm settlement against a canonical
+  archive/MegaMMR source.
+- **Low CPU + long wall time + only DB files open = full-table-scan thrash**, not a network
+  problem. Demand covering indexes (`EXPLAIN QUERY PLAN` must say COVERING INDEX); use
+  `address = ?`, never `lower(address) = ?` (the function defeats the index). Measure DB fixes
+  by pages read (`EXPLAIN ANALYZE`), not wall clock on a warm developer SSD — and know H2 won't
+  use an index for a bare `ORDER BY … LIMIT` without a WHERE (an added `WHERE timemilli > 0`
+  looks redundant and is load-bearing).
+- **Known upstream sharp edges:** the H2 LOB-cleaner thread can be interrupted by the node's
+  30-minute DB reopen cycle and kill the whole process (an unhandled MVStoreException — check
+  the crash buffer when a node "restarts itself"); H2 2.4.240's PBKDF2 fails ART's bytecode
+  verifier on some OEM builds (VerifyError at boot the moment a password-protected DB opens) —
+  pin H2 2.1.214 on Android; H2 date arithmetic reads a bare number as DAYS
+  (`CURRENT_TIMESTAMP - 604800` = 604,800 *days*, so the purge never matched and a log table
+  grew forever — use `DATEADD('SECOND', -n, …)` and prove the purge against the exact H2 jar the
+  node ships); and two node lineages have mutually unreadable DB formats (H2 MVStore 2 vs 3)
+  where the newer engine *wipes* SQL databases on a format clash — never point two node versions
+  at one data folder.

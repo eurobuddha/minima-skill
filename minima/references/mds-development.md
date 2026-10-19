@@ -762,3 +762,55 @@ These are pattern-level hazards, each stated as *hazard → what to do instead*.
   alone rejects the theft.
 </content>
 </invoke>
+
+---
+
+## Hard lessons from shipped MiniDapps
+
+- **Put long-running engines in `service.js`, driven by NEWBLOCK ticks** — minting/sending queues
+  continue with the page closed, self-heal transient errors, and resume from chain state. A
+  block-paced background queue (a `send_queue` table drained by service.js) beats any foreground
+  loop.
+- **The MDS webview caches scripts by URL: bump `?v=` cache-busters on EVERY release** or users
+  mix a cached app.js from one version with a fresh index.html from another — presenting as a
+  broken build while every script loads clean in isolation. Gate dapp.conf version, cache-busters
+  and a visible footer stamp together so they cannot drift.
+- **Handle BOTH `<artimage>` variants:** open-tag-only (`<artimage>B64`) and closed
+  (`<artimage>B64</artimage>`) coexist on mainnet from different minters. Stripping only the
+  opening tag poisons the base64; requiring the closing tag fails the other variant. Write
+  closed tags yourself — strict-XML wallet parsers need them.
+- **Token metadata is polymorphic:** the token field arrives as a plain string, a JSONObject, or
+  a stringified JSON envelope, with name/url/icon/webvalidate at either level. Parse all shapes
+  (the core wallet's TokenMeta pattern); take identity from the node's outer tokenid, never one
+  claimed inside metadata.
+- **Test sanitizers in BOTH directions:** hostile input rejected AND the values your own app
+  writes still pass. A shipped sanitizer blocked every attack and also silently blocked every
+  legitimate `data:` image URI, degrading all on-chain artwork to placeholders for two versions.
+  Mutation-check the suite — re-introducing the bug must fail a test.
+- ★ **Never gate minting on a web-validation proof document:** the proof must contain the
+  tokenid, which only exists AFTER minting — a pre-mint check can never pass legitimately.
+  Validate post-mint (optionally auto-write the tokenid to hosting once the chain reveals it).
+- ★ **Verify a hosted base URL belongs to THIS collection before minting** — a live but foreign
+  base URL passes a naive reachability check and seals the wrong images into an immutable mint.
+  Remember the last successful upload's base, confirm foreign bases explicitly, show URLs in
+  full.
+- **Treat token icon/metadata URLs as hostile:** byte caps, pre-decode size caps, per-redirect
+  host validation with a hop limit, block loopback/LAN targets (token metadata must not be able
+  to point the app at the local node RPC), deterministic identicon fallback, and validate domain
+  ownership through the node's own `tokenvalidate`/`webvalidate`.
+- **Route web fetches through `MDS.net.GET`** — the node proxies, so webview CORS never applies;
+  anything called directly from the browser must be probed at enable time because the Android
+  WebView blocks what desktop Chrome allows. Static pages that must open by double-click
+  (`file://`) must not use ES modules — ESM imports fail silently there; inline into one
+  `index.html`.
+- **Keep the install zip small; fetch heavy assets on first use.** A fully-bundled ~0.4 GB model
+  crashed the memory-constrained mobile node at install; a ~48 MB package that CDN-fetches the
+  engine on opt-in (then cached, fully offline) worked. For on-device ML in a webview prefer
+  CPU/WASM (Android WebView has no WebGPU) and precompute embeddings at build time.
+- **Compression/shrink ladders must terminate at a guaranteed-fit floor** (e.g. dimension-halving
+  to 16 px as last resort), and the final mint gate must re-run the ladder with the REAL form
+  values — fitting an icon against a placeholder record then refusing when real metadata
+  outweighs it strands users a few hundred bytes over budget. When a budget tightens, re-measure
+  every consumer.
+- **Node.js 18+ RPC clients:** the node emits LF-only HTTP headers, which newer Node rejects with
+  `HPE_INVALID_HEADER_TOKEN` — pass `insecureHTTPParser: true` or every call fails.

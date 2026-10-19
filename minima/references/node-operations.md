@@ -597,3 +597,92 @@ Need history older than the node keeps?
 └── Archive node (blocks/coins) or MySQL export (full txpow) — but remember: deep-history
     spend destinations are not recoverable from the archive (witnesses are pruned).
 ```
+
+---
+
+## Hard lessons from running nodes in production
+
+Field-proven operational facts, each from a real incident or a security audit of the node. ★ =
+funds or whole-node at stake.
+
+### RPC and exposure
+
+- ★ **Minima RPC is unauthenticated admin command execution unless you set a password, `rpc
+  ssl:true` is a silent no-op (RPC is always plaintext HTTP), and the handler has historically
+  run every authenticated request as ADMIN regardless of read/write mode.** Bind RPC to
+  loopback, terminate TLS externally, and never run the MDS web UI with a default password on a
+  public IP. Stock RPC binds **all interfaces** with no bind option — on a cloud box with no
+  provider firewall it is internet-reachable full admin.
+- ★ **The node executes EVERY `;`-separated segment of a command string and returns only the
+  first result.** An RPC gateway/allow-list that validates only the first verb is a fund drain
+  (`status ; send …` passes the check and the send executes — proven live). Validate every
+  segment; a public gateway is an ALLOW-list (reads, track-only, relay of pre-signed txns) with
+  wallet-send and seed operations deliberately absent, rate-limited per-IP and globally.
+- **Treat inbound P2P as hostile input.** Audited failure modes include attacker-sized
+  allocations from length prefixes, unbounded list loops in IBD/Greeting parsing, blocking DNS
+  on attacker-supplied hostnames, peer-table poisoning via unbounded greeting peer lists, and an
+  OOM path that halts the JVM. Keep nodes patched; expect that one malicious peer can stall an
+  old node.
+
+### MegaMMR, archive, sync
+
+- **MegaMMR needs ≥3 GB heap.** A fresh `-megammr` node is NOT seeded by IBD — it boots with an
+  empty MegaMMR and answers EMPTY for every pre-existing address, silently defeating a
+  gateway/read role. Seed it explicitly (`megammr action:export` on a donor → import), and make
+  any read service refuse `megammr:true` queries on a node without one.
+- **`megammrsync` auto-shuts the node down on completion — that is success, not a crash.** A
+  resync wipes the MegaMMR (re-import after). Restoring from a backup file is plain
+  `restore file:.. password:..`, never `megammrsync`. Completing IBD is not the same as having a
+  MegaMMR.
+- **Initial sync is weak-subjectivity:** IBD sync blocks are accepted on block-number/parent-hash
+  linkage only — no MMR re-derivation, no PoW check (audit finding). Sync fresh or restoring
+  nodes from hosts you trust and cross-check balances against a second source.
+
+### Corruption and recovery
+
+- **Cascade-corruption crash loop** (signature: `EOFException` reading Cascade → "Your Cascade is
+  BROKEN"): move the data dir aside (reversible), boot fresh, re-seed peers (peer lists reset on
+  container recreate), resync from a nearby archive node, re-import/rebuild the MegaMMR. Healthy
+  disk/RAM does not rule out cascade corruption.
+- **Diagnose a container crash-loop's duration by restart count × backoff, not the first error in
+  the retained log** — Docker keeps old recovered incidents in the same log and a stale entry can
+  misdate an outage by weeks.
+- **Verify backups by their artifacts, not their schedule.** A backup cron ran "successfully" for
+  months producing nothing (missing target dirs + missing container mount). Check the output
+  directory the day after any backup change; never delete a large export mid-write (the writer
+  keeps writing to the unlinked inode).
+
+### Docker specifics
+
+- **Dockerised nodes advertise their internal bridge IP by default → peers can't dial back →
+  stuck at a handful of outbound-only peers.** Fix: `minima_host:<public ip>` plus
+  `minima_server:true` env (the official image reads `minima_*` env natively). It is not a
+  firewall problem — but beware port-remapped siblings: advertising a public host on a container
+  whose public port maps to a *different* container is actively harmful.
+- **docker-compose v1 after an image pull: `stop` + `rm -f` + `up -d`, never bare `up -d`** (the
+  ContainerConfig bug). And a whole-stack `up -d` resurrects a deliberately stopped service under
+  `restart: unless-stopped` — bring services up individually.
+
+### MySQL coins/txpow export (mysqlcoins / mysqlalltxpow)
+
+- ★ **The coins table deliberately has no UNIQUE constraint on coinid** (one row per
+  created/spent state). On any node rebuild or migration, **truncate the coins table before the
+  node comes back up** or every coin double-inserts; then re-run `mysqlcoins action:update` and
+  only then restart any downstream (explorer) syncer.
+- **Long-running SELECTs hold metadata locks that block TRUNCATE** — check the process list and
+  kill blockers first.
+- **The MySQL export updates from the cascade, so it always trails the tip by ~2000 blocks BY
+  DESIGN** — do not "fix" the lag.
+
+### Public/router fleet defaults
+
+- `-server` mode with inbound P2P (9001) open; MDS and RPC OFF; each node generates its own seed
+  on first boot — **never share one seed across nodes** (a copied identity is a second live
+  account: split messages, hijacked sessions). Routers stay light (no `-archive`/`-megammr`)
+  unless deliberate. Open ports in the *provider's* firewall as well as the host. For network
+  strength, ASN/geographic diversity beats node count behind one provider.
+- **A redeploy must reproduce per-box config exactly** — deploy-script defaults rarely match any
+  live box (heap, peer lists, MegaMMR flags). Read the live unit's ExecStart and pass every flag
+  back, or the box silently drops out of its mesh.
+- **A cold node's first RPC request after idle can time out; a warm retry answers in
+  milliseconds** — never conclude a node is down from one short-timeout probe.

@@ -51,6 +51,12 @@ These are the mistakes that lose or lock real funds. `★` = has caused on-chain
 23. ★ **Bound every heavy query.** `coins` has no count cap (only `depth:`); `history` returns full ~14 KB txpow bodies. Three distinct size limits exist: the node RPC's 256 KB "too long" stub (catchable — comes back EMPTY, not an error), an Android app-side ~256 KB receiver cap, and the native Binder ~1 MB (an UNCATCHABLE process kill). Use adaptive paging (`max:8`→4→2→1). → `references/native-android-ipc.md`
 24. **`service.js` is ES5-only** (Nashorn/Rhino: no `let`/`const`, arrow functions, `async`/`await`, `Promise`, `Set`, template literals) — any of them silently prevents the daemon from starting. Page and service share ONLY SQL; SQL columns return UPPERCASE; H2 `varchar(1024)` silently truncates (use `text`); validate every `MDS.cmd` hop; `newaddress` keys regenerate asynchronously after a restore. → `references/mds-development.md`
 
+### Signing, evidence & recovery (from production wallets)
+25. ★★ **One seed, one signer.** Two processes signing the same classic WOTS keys with independent `uses` counters reuse leaves and leak private keys (~1,146 addresses leaked on-chain this way). Delegate signing to the node, or reserve-before-sign atomically at the node; never `keys action:list` → sign locally. → `references/key-security-wots.md`
+26. ★ **Confirm with evidence, never inference.** Input absence ≠ confirmation (poll the exact expected output); `history` ≠ chain inclusion (use `txpow onchain:<id>` — it only searches ~20 hours back); never infer failure from a timeout or absence (keep UNKNOWN outcomes reserved); a positive post reply without a 64-hex TxPoW ID is malformed, and the mined ID can differ from the returned one. Persist intent and reserve inputs BEFORE signing. → `references/transaction-evidence.md`
+27. ★ **`backup` without `password:` is encrypted with the literal default `minima`** (the 24-hour auto-backup runs bare) — treat backup files as seed-equivalent. **`restore` has no rollback** (DBs overwritten in place before a corrupt file fails): pre-flight with `decryptbackup`. → `references/diagnostics-recovery.md`
+28. ★ **Every command string is an injection surface.** The node tokenizer has no escape character, whitespace-splits with last-wins semantics, and executes every `;`-separated segment while returning only the first result — an allow-list validating only the first verb is a fund drain, and a pasted "address" can inject `burn:`. Validate untrusted values before a command string exists. → `references/native-android-ipc.md`
+
 ---
 
 ## Which reference to load
@@ -72,6 +78,7 @@ These are the mistakes that lose or lock real funds. `★` = has caused on-chain
 | Packaging and shipping a MiniDapp — `.mds.zip`, `dapp.conf`, app stores, sandbox, IPFS | `references/distribution-packaging.md` |
 | Mapping the ecosystem, querying a block explorer, or testing scripts offline (minima-vm) | `references/ecosystem-tooling.md` |
 | A transaction failed, coins look stuck, a covenant won't spend, or a node misbehaves | `references/diagnostics-recovery.md` |
+| Building a wallet/financial app — receipts, chain-inclusion proof, durable journals, async-callback hygiene, burn traps, the sendnosign family | `references/transaction-evidence.md` |
 
 ---
 
